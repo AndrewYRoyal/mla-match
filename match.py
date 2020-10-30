@@ -1,10 +1,17 @@
 import pandas as pd
 import subprocess
+import json
 
 paths = {
-    'input_data': 'input.csv',
-    'pscores': 'pscores.csv'
+    'input_data': 'demo_data.csv',
+    'pscores': 'demo_pscores.csv',
+    'features': 'demo_features.json'
 }
+
+with open(paths['features']) as f:
+    features = json.load(f)
+
+features['model']
 
 # Retrieve Propensity Scores
 #=================================

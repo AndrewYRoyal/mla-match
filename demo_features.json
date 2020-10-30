@@ -1,0 +1,4 @@
+{
+  "model":["area","rent_sqft","units","yr_built","lat","lon","low_income","value_imprv_sqft"],
+  "match":["rent_sqft","units"]
+}

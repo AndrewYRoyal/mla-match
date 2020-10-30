@@ -7,8 +7,8 @@ require(ggplot2)
 treat_col = 'low_income'
 
 import_paths = list(
-  input_data = 'input.csv',
-  pscores = 'pscores.csv')
+  input_data = 'demo_data.csv',
+  pscores = 'demo_pscores.csv')
 
 export_paths = list(
   matches = 'output/matches.csv',
