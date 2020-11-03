@@ -1,67 +1,79 @@
 import pandas as pd
+import os
 import subprocess
 import json
+import argparse
 
-paths = {
-    'input_data': 'data/demo/data.csv',
-    'pscores': 'data/demo/pscores.csv',
-    'features': 'cfg/demo/features.json',
-    'model_cfg': 'cfg/model_config.json'
+parser = argparse.ArgumentParser('Machine Learning Assisted Sample Matching')
+parser.add_argument('--data', dest='data', default='', action='store', required=True)
+parser.add_argument('--dep', dest='dep_var', default='', action='store', required=True)
+parser.add_argument('--features', dest='features', default='', action='store')
+parser.add_argument('--pscores', dest='pscores', default='', action='store')
+args = parser.parse_args()
+
+dep_var = args.dep_var
+import_paths = {
+    'data': f'data/{args.data}',
+    'pscores': f'data/{args.pscores}',
+    'features': f'cfg/{args.features}',
+    'model_cfg': 'cfg/model_config.json',
+    'predictions': f'output/predictions/{dep_var}.csv'
 }
-
-with open(paths['features']) as f:
-    features = json.load(f)
-with open(paths['model_cfg']) as f:
-    model_cfg = json.load(f)
-
-
-dep_var = 'low_income'
+export_paths = {
+    'model_input': 'Site-LGBM/input/input.csv',
+    'model_params': 'Site-LGBM/input/model_params.json',
+    'pscores': 'data/pscores.csv'
+}
 
 # Retrieve Propensity Scores
 #=================================
-# If pscores = NULL, this section will
-    # 1)Read input data. 2) format and export data and model parameters to LGBM. 3) Call LGBM 4) import predictions 5) export pscores for R to use
-# If pscores != Null
+if args.pscores == '':
+    print('No propensity scores supplied. Calculating scores with LightGBM.')
+    model_dat = pd.read_csv(import_paths['data'])
+    if args.features != '':
+        with open(import_paths['features']) as f:
+            features = json.load(f)
+    else:
+        features = set(model_dat.columns).difference(['id', dep_var])
+    model_dat = model_dat[['id', dep_var] + features['model']]
+    with open(import_paths['model_cfg']) as f:
+        model_cfg = json.load(f)
+    model_cfg.update({'dep_var': [dep_var]})
+    model_cfg.update({'ivars': features['model']})
+    model_cfg = {dep_var: model_cfg}
 
-model_cfg.
+    if (not os.path.exists(export_paths['model_input'])):
+        os.mkdir(export_paths['model_input'])
 
+    model_dat.to_csv(export_paths['model_input'], index=False)
+    with open(export_paths['model_params'], 'w') as outfile:
+        json.dump(model_cfg, outfile)
 
-# add these to the dict
-#"dep_var": ["low_income"],
-#"ivars": ["area", "rent_sqft", "units", "yr_built", "lat", "lon", "low_income", "value_imprv_sqft"],
-# name the dict   "low_income"
+    gbm_call = 'python Site-LGBM/predict.py --data {} --params {}'.format(
+        export_paths['model_input'],
+        export_paths['model_params']
+    )
+    subprocess.call(gbm_call, shell=True)
 
-# "n_estimators":[25,50,75,100,200,300,400,500,600,700,800,900,1000],
-# "num_leaves":[4,8,16,32,64,128]
-model_params = {
-    dep_var:
-        {
-            "dep_var":[dep_var],
-            "ivars":features['model'],
-            "log_dep":[False],
-            "meta":{
-                "project":["project"],
-                "alias":["alias"]
-            },
-            "params":
-                {
-                    "param_grid":
-                        {
-                            "n_estimators":[25]
-                        },
-                    "cv":[10],
-                    "n_jobs":[-1],
-                    "verbose":[1],
-                    "estimator":
-                        ["LGBMClassifier"],
-                    "scoring":["accuracy"]
-                }
-        }
-}
-
-with open('params.json', 'w') as outfile:
-    json.dump(model_params, outfile)
+    pscores = pd.read_csv(import_paths['predictions'])
+    pscores.rename(columns={'Yes': 'pscore'}, inplace=True)
+    pscores[['id', 'pscore']].to_csv(export_paths['pscores'], index=False)
+else:
+    pscores = pd.read_csv(import_paths['pscores'])
+    pscores.to_csv(export_paths['pscores'], index=False)
 
 # Call Matching Script
 #=================================
+# TODO: supply Rscript with: 1) path to cfg file for match features, 2) dep_var, 3) path to data file
+r_call = 'Rscript match.R --dep {} --data {} --pscores {} --features {}'.format(
+    dep_var,
+    import_paths['data'],
+    export_paths['pscores'],
+    import_paths['model_cfg']
+)
+r_call = 'Rscript match.R'
+
 subprocess.call ("Rscript match.R", shell=True)
+
+# "n_estimators":[25,50,75,100,200,300,400,500,600,700,800,900,1000],
+# "num_leaves":[4,8,16,32,64,128]

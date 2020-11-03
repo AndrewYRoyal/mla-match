@@ -2,13 +2,21 @@ require(data.table)
 require(distances)
 require(magrittr)
 require(ggplot2)
+require(jsonlite)
 
-# TODO: pass argument that supplies treatment colum name
-treat_col = 'low_income'
+# TODO Parse:
+# 1) dep_var
+# 2) data
+# 3) pscores
+# 4) features
+
+
+dep_var = 'low_income'
 
 import_paths = list(
-  input_data = 'demo_data.csv',
-  pscores = 'demo_pscores.csv')
+  data = 'data/demo/data.csv',
+  pscores = 'data/pscores.csv',
+  features = 'cfg/demo/features.json')
 
 export_paths = list(
   matches = 'output/matches.csv',
@@ -19,15 +27,29 @@ export_paths = list(
 
 # Import & Format
 #===============================================
-input_dat = fread(import_paths$input_data, key = 'id') %>%
+input_dat = fread(import_paths$data, key = 'id') %>%
   merge(fread(import_paths$pscores, key = 'id')) %>%
   .[order(-pscore)]
-setnames(input_dat, treat_col, 'treated')
+setnames(input_dat, dep_var, 'treated')
 
-compare_cols = names(input_dat) %>% setdiff(c('treated', 'id', 'pscore'))
+compare_cols = fromJSON(import_paths$features)$match
 
 treated_rows = input_dat[treated == 'Yes', which = TRUE]
 target_dat = input_dat[-treated_rows, .SD, .SDcols = 'id']
+
+# Normalize Compare Columns
+#===============================================
+# normalize = function(x) (x - mean(x)) / sd(x)
+# input_dat[, (compare_cols):= lapply(.SD, normalize), .SDcols = compare_cols]
+
+# input_dat[, mean(rent_sqft), by = 'treated']
+# TODO: fix the demo data... it is showing higher rents for low_income housing
+    # Maybe do box plots instead of dot and whisker
+    # Maybe add a PCA script before too. (cluster and highlight... plot PCA weights)
+# input_dat[, treated:= as.numeric(treated == "Yes")]
+# lm("rent_sqft ~ units + area + value_imprv_sqft + treated", data = input_dat) %>% summary
+# lm("rent_sqft ~ treated", data = input_dat) %>% summary
+
 
 # Functions
 #===============================================
@@ -94,9 +116,9 @@ input_dat[, (compare_cols):= lapply(.SD, as.numeric), .SDcols = compare_cols]
 n_treated = uniqueN(input_dat[treated == 'Yes'])
 input_dat[id %in% matchDT$match, status:= 'matched']
 input_dat[is.na(status) & treated == 'No', status:= 'unmatched']
-input_dat[treated == 'Yes', status:= treat_col]
-setnames(input_dat, 'treated', treat_col)
-input_dat[, status:= factor(status, levels = c(treat_col, 'matched', 'unmatched'))]
+input_dat[treated == 'Yes', status:= dep_var]
+setnames(input_dat, 'treated', dep_var)
+input_dat[, status:= factor(status, levels = c(dep_var, 'matched', 'unmatched'))]
 
 fwrite(input_dat, export_paths$plot_data)
 
@@ -108,7 +130,7 @@ pp_dat = input_dat[, .SD, .SDcols = c('status', 'id', compare_cols)] %>%
   lapply(transform_cdf) %>%
   rbindlist %>%
   melt(id.vars = setdiff(names(.), c('unmatched', 'matched')), variable.name = 'group', value.name = 'comparison')
-pp_dat[, deviation:= abs(get(treat_col) - comparison)]
+pp_dat[, deviation:= abs(get(dep_var) - comparison)]
 pp_dat[, D:= max(deviation), by = c('group', 'variable')]
 pp_dat[, ks:= pmin(calc_ks(D), 1)]
 pp_dat[, variable_ks:= sprintf('%s (D=%s,ks=%s)', variable, round(D, 2), round(ks, 2))]
@@ -118,10 +140,10 @@ groups = c('matched', 'unmatched')
 names(groups) = groups
 
 pp_plot = lapply(groups, function(g) {
-  ggplot(pp_dat[group == g], aes(x = get(treat_col), y = comparison, color = deviation)) +
+  ggplot(pp_dat[group == g], aes(x = get(dep_var), y = comparison, color = deviation)) +
     geom_point() +
     scale_color_gradient2(low = 'darkgreen', mid = 'yellow',  high = 'red', midpoint = .2) +
-    scale_x_continuous(name = treat_col) +
+    scale_x_continuous(name = dep_var) +
     facet_wrap(~variable_ks) +
     guides(color = FALSE) +
     ggtitle('PP-Plots', sprintf('%s comparison', g)) +
@@ -133,7 +155,7 @@ ggsave(pp_plot$matched, file = export_paths$pp_matched, width = 8, height = 5)
 # Averages Plot
 avg_dat = input_dat[, .SD, .SDcols = c('id', 'status', compare_cols)] %>%
   melt(id.vars = c('id', 'status'))
-treated_stats = avg_dat[status == treat_col, .(tmean = mean(value), tvar = var(value)), by = 'variable']
+treated_stats = avg_dat[status == dep_var, .(tmean = mean(value), tvar = var(value)), by = 'variable']
 avg_dat = merge(avg_dat, treated_stats)
 
 avg_dat = avg_dat[, .(
@@ -143,7 +165,7 @@ avg_dat = avg_dat[, .(
   by = .(status, variable)] %>%
   unique
 
-avg_dat[status != treat_col, p:= calc_p_value(tstat), by = 'status']
+avg_dat[status != dep_var, p:= calc_p_value(tstat), by = 'status']
 
 avg_dat = avg_dat %>%
   merge(avg_dat[status == 'unmatched', .(p_u = calc_p_value(tstat), variable)]) %>%

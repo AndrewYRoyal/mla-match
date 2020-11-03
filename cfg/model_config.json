@@ -1,13 +1,11 @@
 {
-  "low_income":
-  {
-    "log_dep": [false],
-    "meta": {
-      "project": ["project"], "alias": ["alias"]
+  "log_dep": [false],
+  "meta": {
+    "project": ["project"], "alias": ["alias"]
     },
     "params": {
       "param_grid": {
-        "n_estimators": [25]
+        "n_estimators": [5,10,50,100,200]
       },
       "cv": [10],
       "n_jobs": [-1],
@@ -15,6 +13,7 @@
       "estimator": ["LGBMClassifier"],
       "scoring": ["accuracy"]
     }
-  }
 }
+
+
 
